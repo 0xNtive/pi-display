@@ -45,27 +45,23 @@ readability on the monochrome screen.
 - Pause, skip, and preview buttons
 - Enter your OpenWeatherMap API key
 
-## Setup on Your Pi
+## Install (one command)
+
+SSH into your Pi and run:
 
 ```bash
-# 1. Copy project to Pi
-scp -r pi/ pi@<your-pi-ip>:~/pi-display
-
-# 2. SSH in and run installer
-ssh pi@<your-pi-ip>
-cd ~/pi-display
-sudo bash install.sh
-
-# 3. Reboot (if SPI wasn't already enabled)
-sudo reboot
-
-# 4. After reboot, start it
-sudo systemctl start pi-display
-
-# 5. Open web panel from any device
-#    http://<pi-ip>:5000
-#    Enter your free OpenWeatherMap key there
+git clone https://github.com/YOUR_USER/pi.git ~/pi-display && cd ~/pi-display && sudo bash install.sh
 ```
+
+The installer handles everything:
+- Installs system packages and Python dependencies
+- Enables SPI (needed for the Inky pHAT)
+- Creates a Python venv with all deps
+- Sets up a systemd service that starts on boot
+- Prompts for your free OpenWeatherMap API key
+- Reboots if needed, otherwise starts the service immediately
+
+After install, open `http://<pi-ip>:5000` from any device to configure.
 
 ## API Key
 
@@ -73,6 +69,7 @@ Get your free OpenWeatherMap key at:
 https://home.openweathermap.org/api_keys
 
 The free tier gives 1000 calls/day, which is more than enough.
+Stocks and crypto work without any API key.
 
 ## Test Locally (No Pi Required)
 
