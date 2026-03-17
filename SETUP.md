@@ -50,7 +50,7 @@ readability on the monochrome screen.
 SSH into your Pi and run:
 
 ```bash
-git clone https://github.com/YOUR_USER/pi.git ~/pi-display && cd ~/pi-display && sudo bash install.sh
+git clone https://github.com/0xNtive/pi-display.git ~/pi-display && cd ~/pi-display && sudo bash install.sh
 ```
 
 The installer handles everything:
