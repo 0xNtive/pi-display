@@ -1,0 +1,34 @@
+{
+  "tickers": {
+    "stocks": ["AAPL", "GOOGL", "MSFT"],
+    "crypto": ["bitcoin", "ethereum"]
+  },
+  "weather": {
+    "lat": 40.7128,
+    "lon": -74.006,
+    "city_name": "New York",
+    "units": "imperial"
+  },
+  "headlines": {
+    "enabled": true,
+    "feeds": [
+      {"name": "Reuters Top", "url": "https://feeds.reuters.com/reuters/topNews", "enabled": true},
+      {"name": "Reuters Tech", "url": "https://feeds.reuters.com/reuters/technologyNews", "enabled": true},
+      {"name": "AP News", "url": "https://rsshub.app/apnews/topics/apf-topnews", "enabled": false},
+      {"name": "Hacker News", "url": "https://hnrss.org/frontpage", "enabled": true}
+    ]
+  },
+  "display": {
+    "cycle_seconds": 45,
+    "screens_enabled": {
+      "prices": true,
+      "weather": true,
+      "air_quality": true,
+      "headlines": true
+    }
+  },
+  "api_keys": {
+    "openweathermap": ""
+  },
+  "web_port": 5000
+}

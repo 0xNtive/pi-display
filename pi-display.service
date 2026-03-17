@@ -1,0 +1,20 @@
+# Systemd service file for pi-display
+# This is a template — install.sh generates the real one with correct paths.
+# Manual install: copy to /etc/systemd/system/pi-display.service and edit paths.
+
+[Unit]
+Description=Pi Display - E-ink Info Screen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/pi-display
+ExecStart=/home/pi/pi-display/venv/bin/python server.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

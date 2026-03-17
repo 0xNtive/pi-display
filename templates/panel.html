@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi Display Panel</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e4e4e7;
+    --muted: #888;
+    --accent: #6c8cff;
+    --accent-hover: #8da6ff;
+    --danger: #ff5c5c;
+    --success: #4ade80;
+    --input-bg: #22252f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 16px;
+    max-width: 640px; margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  h1 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+  h1 .dot.paused { background: var(--danger); }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 12px;
+  }
+  .card h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); margin-bottom: 12px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type="text"], input[type="number"], select {
+    width: 100%; background: var(--input-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 14px;
+    margin-bottom: 10px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 8px 16px; font-size: 13px; cursor: pointer; font-weight: 500;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.sm { padding: 5px 10px; font-size: 12px; }
+  button.outline {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+  }
+  button.outline:hover { border-color: var(--accent); color: var(--accent); }
+  button.danger { background: var(--danger); }
+  button.danger:hover { background: #ff4040; }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .tag {
+    background: var(--input-bg); border: 1px solid var(--border); border-radius: 14px;
+    padding: 4px 10px; font-size: 13px; display: flex; align-items: center; gap: 6px;
+  }
+  .tag .x { cursor: pointer; color: var(--muted); font-weight: bold; }
+  .tag .x:hover { color: var(--danger); }
+  .toggle {
+    position: relative; width: 40px; height: 22px; display: inline-block;
+    margin-right: 8px; vertical-align: middle;
+  }
+  .toggle input { display: none; }
+  .toggle .slider {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--border); border-radius: 22px; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle .slider::before {
+    content: ""; position: absolute; width: 16px; height: 16px;
+    left: 3px; bottom: 3px; background: var(--text); border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle input:checked + .slider { background: var(--accent); }
+  .toggle input:checked + .slider::before { transform: translateX(18px); }
+  .toggle-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row span { font-size: 14px; }
+  .status-bar {
+    font-size: 12px; color: var(--muted); display: flex;
+    justify-content: space-between; margin-bottom: 12px;
+  }
+  .preview-img {
+    display: block; margin: 10px auto 0; border: 2px solid var(--border);
+    border-radius: 4px; image-rendering: pixelated; max-width: 100%;
+  }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .feed-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .feed-row:last-child { border-bottom: none; }
+  .feed-row .feed-name { flex: 1; }
+  .feed-row .feed-url { color: var(--muted); font-size: 11px; flex: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--success); color: #000; padding: 8px 20px; border-radius: 8px;
+    font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  @media (max-width: 420px) {
+    body { padding: 10px; }
+    .row { flex-direction: column; gap: 0; }
+  }
+</style>
+</head>
+<body>
+
+<h1><span class="dot" id="statusDot"></span> Pi Display</h1>
+<div class="status-bar">
+  <span id="statusText">Loading...</span>
+  <span id="currentScreen">--</span>
+</div>
+
+<!-- Controls -->
+<div class="card">
+  <h2>Controls</h2>
+  <div class="btn-row">
+    <button id="btnPause" class="outline">Pause</button>
+    <button id="btnSkip" class="outline">Skip</button>
+    <button id="btnPreview" class="outline">Preview</button>
+  </div>
+  <img id="previewImg" class="preview-img" style="display:none" alt="Screen preview">
+</div>
+
+<!-- Tickers -->
+<div class="card">
+  <h2>Stock Tickers</h2>
+  <div class="tag-list" id="stockTags"></div>
+  <div class="row">
+    <input type="text" id="stockInput" placeholder="e.g. AAPL, TSLA">
+    <div><button class="sm" onclick="addTicker('stock')">Add</button></div>
+  </div>
+  <h2 style="margin-top:14px">Crypto</h2>
+  <div class="tag-list" id="cryptoTags"></div>
+  <div class="row">
+    <input type="text" id="cryptoInput" placeholder="e.g. bitcoin, solana">
+    <div><button class="sm" onclick="addTicker('crypto')">Add</button></div>
+  </div>
+</div>
+
+<!-- Weather & AQ -->
+<div class="card">
+  <h2>Weather & Air Quality</h2>
+  <div class="row">
+    <div>
+      <label>City Name</label>
+      <input type="text" id="cityName" placeholder="New York">
+    </div>
+    <div>
+      <label>Units</label>
+      <select id="units">
+        <option value="imperial">Imperial (F)</option>
+        <option value="metric">Metric (C)</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Latitude</label>
+      <input type="text" id="lat" placeholder="40.7128">
+    </div>
+    <div>
+      <label>Longitude</label>
+      <input type="text" id="lon" placeholder="-74.006">
+    </div>
+  </div>
+  <button class="sm" onclick="saveWeather()">Update Location</button>
+</div>
+
+<!-- Headlines -->
+<div class="card">
+  <h2>Headlines (RSS Feeds)</h2>
+  <div id="feedList"></div>
+  <div style="margin-top:10px">
+    <div class="row">
+      <div><input type="text" id="feedName" placeholder="Feed name"></div>
+      <div><input type="text" id="feedUrl" placeholder="RSS feed URL"></div>
+    </div>
+    <button class="sm" onclick="addFeed()">Add Feed</button>
+  </div>
+</div>
+
+<!-- Screens -->
+<div class="card">
+  <h2>Active Screens</h2>
+  <div id="screenToggles"></div>
+  <div style="margin-top:12px">
+    <label>Cycle Interval (seconds)</label>
+    <input type="number" id="cycleSeconds" min="15" max="300" value="45">
+    <button class="sm" onclick="saveDisplay()">Update</button>
+  </div>
+</div>
+
+<!-- API Keys -->
+<div class="card">
+  <h2>API Keys</h2>
+  <label>OpenWeatherMap <span style="color:var(--muted)">(free tier — for weather & air quality)</span></label>
+  <input type="text" id="owmKey" placeholder="Paste your API key">
+  <button class="sm" onclick="saveApiKeys()">Save Key</button>
+</div>
+
+<div class="toast" id="toast">Saved</div>
+
+<script>
+let config = {};
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api/' + path, opts);
+  return r.json();
+}
+
+async function loadConfig() {
+  config = await api('config');
+  renderAll();
+}
+
+function renderAll() {
+  // Stocks
+  const stockTags = document.getElementById('stockTags');
+  stockTags.innerHTML = config.tickers.stocks.map(s =>
+    `<span class="tag">${s}<span class="x" onclick="removeTicker('stock','${s}')">&times;</span></span>`
+  ).join('');
+
+  // Crypto
+  const cryptoTags = document.getElementById('cryptoTags');
+  cryptoTags.innerHTML = config.tickers.crypto.map(s =>
+    `<span class="tag">${s}<span class="x" onclick="removeTicker('crypto','${s}')">&times;</span></span>`
+  ).join('');
+
+  // Weather
+  document.getElementById('cityName').value = config.weather.city_name || '';
+  document.getElementById('lat').value = config.weather.lat || '';
+  document.getElementById('lon').value = config.weather.lon || '';
+  document.getElementById('units').value = config.weather.units || 'imperial';
+
+  // Feeds
+  const feedList = document.getElementById('feedList');
+  feedList.innerHTML = config.headlines.feeds.map((f, i) =>
+    `<div class="feed-row">
+      <label class="toggle"><input type="checkbox" ${f.enabled?'checked':''} onchange="toggleFeed(${i})"><span class="slider"></span></label>
+      <span class="feed-name">${f.name}</span>
+      <span class="feed-url">${f.url}</span>
+      <span class="x" style="cursor:pointer;color:var(--muted)" onclick="removeFeed(${i})">&times;</span>
+    </div>`
+  ).join('');
+
+  // Screen toggles
+  const screens = config.display.screens_enabled;
+  const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines'};
+  const st = document.getElementById('screenToggles');
+  st.innerHTML = Object.entries(names).map(([k,v]) =>
+    `<div class="toggle-row">
+      <span>${v}</span>
+      <label class="toggle"><input type="checkbox" ${screens[k]?'checked':''} onchange="toggleScreen('${k}')"><span class="slider"></span></label>
+    </div>`
+  ).join('');
+
+  // Cycle
+  document.getElementById('cycleSeconds').value = config.display.cycle_seconds || 45;
+
+  // API keys
+  document.getElementById('owmKey').value = config.api_keys.openweathermap || '';
+}
+
+async function addTicker(type) {
+  const input = document.getElementById(type === 'stock' ? 'stockInput' : 'cryptoInput');
+  const val = input.value.trim();
+  if (!val) return;
+  const key = type === 'stock' ? 'stocks' : 'crypto';
+  const formatted = type === 'stock' ? val.toUpperCase() : val.toLowerCase();
+  if (!config.tickers[key].includes(formatted)) {
+    config.tickers[key].push(formatted);
+    await api('config', 'POST', { tickers: config.tickers });
+    toast('Added ' + formatted);
+  }
+  input.value = '';
+  renderAll();
+}
+
+async function removeTicker(type, sym) {
+  const key = type === 'stock' ? 'stocks' : 'crypto';
+  config.tickers[key] = config.tickers[key].filter(s => s !== sym);
+  await api('config', 'POST', { tickers: config.tickers });
+  toast('Removed ' + sym);
+  renderAll();
+}
+
+async function saveWeather() {
+  config.weather = {
+    city_name: document.getElementById('cityName').value,
+    lat: parseFloat(document.getElementById('lat').value) || 0,
+    lon: parseFloat(document.getElementById('lon').value) || 0,
+    units: document.getElementById('units').value,
+  };
+  await api('config', 'POST', { weather: config.weather });
+  toast('Location updated');
+}
+
+async function toggleFeed(i) {
+  config.headlines.feeds[i].enabled = !config.headlines.feeds[i].enabled;
+  await api('config', 'POST', { headlines: config.headlines });
+  toast('Feed toggled');
+}
+
+async function removeFeed(i) {
+  config.headlines.feeds.splice(i, 1);
+  await api('config', 'POST', { headlines: config.headlines });
+  toast('Feed removed');
+  renderAll();
+}
+
+async function addFeed() {
+  const name = document.getElementById('feedName').value.trim();
+  const url = document.getElementById('feedUrl').value.trim();
+  if (!name || !url) return;
+  config.headlines.feeds.push({ name, url, enabled: true });
+  await api('config', 'POST', { headlines: config.headlines });
+  document.getElementById('feedName').value = '';
+  document.getElementById('feedUrl').value = '';
+  toast('Feed added');
+  renderAll();
+}
+
+async function toggleScreen(key) {
+  config.display.screens_enabled[key] = !config.display.screens_enabled[key];
+  await api('config', 'POST', { display: config.display });
+  toast('Screen toggled');
+}
+
+async function saveDisplay() {
+  config.display.cycle_seconds = parseInt(document.getElementById('cycleSeconds').value) || 45;
+  await api('config', 'POST', { display: config.display });
+  toast('Display settings saved');
+}
+
+async function saveApiKeys() {
+  config.api_keys = {
+    openweathermap: document.getElementById('owmKey').value.trim(),
+  };
+  await api('config', 'POST', { api_keys: config.api_keys });
+  toast('API key saved');
+}
+
+// Controls
+document.getElementById('btnPause').addEventListener('click', async () => {
+  const r = await api('pause', 'POST');
+  document.getElementById('btnPause').textContent = r.paused ? 'Resume' : 'Pause';
+  document.getElementById('statusDot').classList.toggle('paused', r.paused);
+  toast(r.paused ? 'Paused' : 'Resumed');
+});
+
+document.getElementById('btnSkip').addEventListener('click', async () => {
+  await api('skip', 'POST');
+  toast('Skipped');
+  pollStatus();
+});
+
+document.getElementById('btnPreview').addEventListener('click', async () => {
+  const img = document.getElementById('previewImg');
+  const status = await api('status');
+  const screen = status.current_screen || 'prices';
+  img.src = '/api/preview/' + screen + '?t=' + Date.now();
+  img.style.display = 'block';
+});
+
+async function pollStatus() {
+  try {
+    const s = await api('status');
+    const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines'};
+    document.getElementById('currentScreen').textContent = 'Screen: ' + (names[s.current_screen] || s.current_screen);
+    document.getElementById('statusDot').classList.toggle('paused', s.paused);
+    document.getElementById('btnPause').textContent = s.paused ? 'Resume' : 'Pause';
+    const updates = Object.entries(s.last_update).map(([k,v]) => `${k}: ${v}`).join(' | ');
+    document.getElementById('statusText').textContent = updates || 'Starting...';
+  } catch(e) {}
+}
+
+// Allow Enter key in inputs
+document.getElementById('stockInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker('stock'); });
+document.getElementById('cryptoInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker('crypto'); });
+
+// Init
+loadConfig();
+setInterval(pollStatus, 5000);
+pollStatus();
+</script>
+</body>
+</html>
