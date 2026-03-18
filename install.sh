@@ -74,11 +74,16 @@ fi
 # ── 3. Python venv + deps ───────────────────────────────────────
 
 step 3 "Setting up Python environment"
+
+# Use disk-based temp dir — Pi Zero's tmpfs is too small for pip builds
+export TMPDIR="/var/tmp/pip-build"
+mkdir -p "$TMPDIR"
+
 info "Creating venv at $INSTALL_DIR/venv"
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
 info "Installing Python packages (this takes a few minutes on Pi Zero)..."
-"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
+"$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt" -q
 ok "Python environment ready"
 
 # ── 4. Systemd service ──────────────────────────────────────────
