@@ -95,6 +95,12 @@ while IFS= read -r pkg || [ -n "$pkg" ]; do
     # skip blank lines and comments
     [ -z "$pkg" ] && continue
     [[ "$pkg" =~ ^# ]] && continue
+    # strip version specifier to get base package name for check
+    pkg_name=$(echo "$pkg" | sed 's/[>=<\[].*//')
+    if "$INSTALL_DIR/venv/bin/pip" show "$pkg_name" >/dev/null 2>&1; then
+        ok "$pkg_name already installed — skipping"
+        continue
+    fi
     info "Installing $pkg..."
     "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir "$pkg" || {
         warn "Failed to install $pkg"
