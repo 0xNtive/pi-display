@@ -43,10 +43,15 @@ fi
 # ── 1. System packages ──────────────────────────────────────────
 
 step 1 "Installing system packages"
+info "Updating package lists..."
 apt-get update -qq
-apt-get install -y -qq python3 python3-pip python3-venv python3-dev \
-    fonts-dejavu-core libopenjp2-7 libtiff6 libtiff5 libatlas-base-dev \
-    git 2>/dev/null || true
+PKGS="python3 python3-pip python3-venv python3-dev fonts-dejavu-core libopenjp2-7 libatlas-base-dev git"
+# libtiff6 or libtiff5 depending on OS version
+apt-cache show libtiff6 >/dev/null 2>&1 && PKGS="$PKGS libtiff6" || PKGS="$PKGS libtiff5"
+for pkg in $PKGS; do
+    info "Installing $pkg..."
+    apt-get install -y -qq "$pkg" 2>/dev/null || warn "Could not install $pkg (may be ok)"
+done
 ok "System packages installed"
 
 # ── 2. Enable SPI ───────────────────────────────────────────────
@@ -81,9 +86,23 @@ mkdir -p "$TMPDIR"
 
 info "Creating venv at $INSTALL_DIR/venv"
 python3 -m venv "$INSTALL_DIR/venv"
+info "Upgrading pip..."
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
 info "Installing Python packages (this takes a few minutes on Pi Zero)..."
-"$INSTALL_DIR/venv/bin/pip" install --no-cache-dir -r "$INSTALL_DIR/requirements.txt" -q
+info "Temp dir: $TMPDIR ($(df -h "$TMPDIR" | tail -1 | awk '{print $4}') free)"
+info "Disk: $(df -h / | tail -1 | awk '{print $4}') free on /"
+while IFS= read -r pkg || [ -n "$pkg" ]; do
+    # skip blank lines and comments
+    [ -z "$pkg" ] && continue
+    [[ "$pkg" =~ ^# ]] && continue
+    info "Installing $pkg..."
+    "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir "$pkg" || {
+        warn "Failed to install $pkg"
+        warn "Disk: $(df -h / | tail -1 | awk '{print $4}') free on /"
+        warn "Temp: $(df -h "$TMPDIR" | tail -1 | awk '{print $4}') free on $TMPDIR"
+        exit 1
+    }
+done < "$INSTALL_DIR/requirements.txt"
 ok "Python environment ready"
 
 # ── 4. Systemd service ──────────────────────────────────────────
@@ -109,7 +128,9 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
+info "Reloading systemd..."
 systemctl daemon-reload
+info "Enabling service..."
 systemctl enable pi-display.service -q
 ok "Service installed and enabled (starts on boot)"
 
