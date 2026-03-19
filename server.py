@@ -98,7 +98,7 @@ def _cycle_display(cfg):
         w = cfg["weather"]
         data = fetchers.fetch_air_quality(
             w["lat"], w["lon"],
-            cfg["api_keys"]["openweathermap"],
+            cfg["api_keys"].get("iqair", ""),
         )
         img = display.render_air_quality(data, w.get("city_name", ""))
 
@@ -219,7 +219,7 @@ def preview_screen(screen_name):
         w = cfg["weather"]
         data = fetchers.fetch_air_quality(
             w["lat"], w["lon"],
-            cfg["api_keys"]["openweathermap"],
+            cfg["api_keys"].get("iqair", ""),
         )
         img = display.render_air_quality(data, w.get("city_name", ""))
     elif screen_name == "headlines":
@@ -239,6 +239,28 @@ def preview_screen(screen_name):
 
 WIDTH_PREVIEW = 250 * 3
 HEIGHT_PREVIEW = 122 * 3
+
+
+@app.route("/api/search/stock")
+def search_stock():
+    q = request.args.get("q", "").strip()
+    if len(q) < 1:
+        return jsonify([])
+    try:
+        url = "https://query1.finance.yahoo.com/v1/finance/search"
+        r = http_requests.get(url, params={"q": q, "quotesCount": 8, "newsCount": 0},
+                              headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        results = []
+        for item in r.json().get("quotes", []):
+            results.append({
+                "symbol": item.get("symbol", ""),
+                "name": item.get("shortname") or item.get("longname", ""),
+                "type": item.get("quoteType", ""),
+                "exchange": item.get("exchDisp", ""),
+            })
+        return jsonify(results)
+    except Exception as e:
+        return jsonify([])
 
 
 @app.route("/api/validate/stock")

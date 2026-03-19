@@ -12,9 +12,9 @@
   "headlines": {
     "enabled": true,
     "feeds": [
-      {"name": "Reuters Top", "url": "https://feeds.reuters.com/reuters/topNews", "enabled": true},
-      {"name": "Reuters Tech", "url": "https://feeds.reuters.com/reuters/technologyNews", "enabled": true},
-      {"name": "AP News", "url": "https://rsshub.app/apnews/topics/apf-topnews", "enabled": false},
+      {"name": "BBC News", "url": "https://feeds.bbci.co.uk/news/rss.xml", "enabled": true},
+      {"name": "BBC Tech", "url": "https://feeds.bbci.co.uk/news/technology/rss.xml", "enabled": true},
+      {"name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml", "enabled": true},
       {"name": "Hacker News", "url": "https://hnrss.org/frontpage", "enabled": true}
     ]
   },
@@ -28,7 +28,8 @@
     }
   },
   "api_keys": {
-    "openweathermap": ""
+    "openweathermap": "",
+    "iqair": "a9cf8837-8e28-40b5-ba11-a47da71fbe5d"
   },
   "web_port": 5000
 }

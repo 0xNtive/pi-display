@@ -4,6 +4,7 @@ Renders in grayscale ("L" mode) for correct previews, then converts
 to the Inky's palette format at display time.
 """
 
+import math
 import os
 import logging
 from datetime import datetime
@@ -92,6 +93,77 @@ def _dotted_hline(draw, y, x0=4, x1=None):
 def _wind_dir(deg):
     dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     return dirs[round(deg / 45) % 8]
+
+
+def _draw_weather_icon(draw, x, y, icon_code):
+    """Draw a simple weather icon based on OpenWeatherMap icon code."""
+    code = icon_code[:2] if icon_code else "01"
+    is_night = icon_code.endswith("n") if icon_code else False
+
+    if code == "01":  # clear sky
+        # Sun or moon
+        cx, cy, r = x + 16, y + 16, 10
+        if is_night:
+            draw.arc([cx - r, cy - r, cx + r, cy + r], 220, 80, fill=BLACK, width=2)
+            draw.arc([cx - r + 4, cy - r - 2, cx + r + 4, cy + r - 2], 220, 80, fill=WHITE, width=3)
+        else:
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=BLACK)
+            # Rays
+            for angle in range(0, 360, 45):
+                rx = cx + int((r + 5) * math.cos(math.radians(angle)))
+                ry = cy + int((r + 5) * math.sin(math.radians(angle)))
+                rx2 = cx + int((r + 2) * math.cos(math.radians(angle)))
+                ry2 = cy + int((r + 2) * math.sin(math.radians(angle)))
+                draw.line([(rx2, ry2), (rx, ry)], fill=BLACK, width=1)
+
+    elif code == "02":  # few clouds
+        # Small sun + cloud
+        draw.ellipse([x + 4, y + 6, x + 18, y + 20], fill=BLACK)  # sun
+        _draw_cloud(draw, x + 8, y + 12, 24, 14)
+
+    elif code in ("03", "04"):  # clouds
+        _draw_cloud(draw, x + 4, y + 8, 26, 16)
+        if code == "04":
+            _draw_cloud(draw, x + 10, y + 14, 22, 14)
+
+    elif code == "09":  # shower rain
+        _draw_cloud(draw, x + 4, y + 4, 26, 14)
+        for rx in [x + 10, x + 18, x + 26]:
+            draw.line([(rx, y + 22), (rx - 3, y + 28)], fill=BLACK, width=1)
+
+    elif code == "10":  # rain
+        _draw_cloud(draw, x + 4, y + 4, 26, 14)
+        for rx in [x + 8, x + 14, x + 20, x + 26]:
+            draw.line([(rx, y + 22), (rx - 3, y + 28)], fill=BLACK, width=1)
+            draw.line([(rx - 1, y + 24), (rx - 4, y + 30)], fill=BLACK, width=1)
+
+    elif code == "11":  # thunderstorm
+        _draw_cloud(draw, x + 4, y + 4, 26, 14)
+        # Lightning bolt
+        draw.polygon([(x + 16, y + 19), (x + 13, y + 25), (x + 17, y + 25),
+                       (x + 14, y + 32)], fill=BLACK)
+
+    elif code == "13":  # snow
+        _draw_cloud(draw, x + 4, y + 4, 26, 14)
+        for sx, sy in [(x + 10, y + 24), (x + 18, y + 22), (x + 26, y + 26)]:
+            draw.text((sx, sy), "*", fill=BLACK, font=FONT_SM_B)
+
+    elif code == "50":  # mist
+        for ly in range(y + 8, y + 30, 5):
+            draw.line([(x + 4, ly), (x + 28, ly)], fill=BLACK, width=1)
+            draw.line([(x + 8, ly + 2), (x + 30, ly + 2)], fill=BLACK, width=1)
+
+    else:  # fallback
+        _draw_cloud(draw, x + 4, y + 8, 26, 16)
+
+
+def _draw_cloud(draw, x, y, w, h):
+    """Draw a simple cloud shape."""
+    # Main body
+    draw.ellipse([x, y + h // 3, x + w, y + h], fill=BLACK)
+    # Top bumps
+    draw.ellipse([x + w // 6, y, x + w // 2 + 2, y + h * 2 // 3], fill=BLACK)
+    draw.ellipse([x + w // 3, y + 2, x + w - w // 6, y + h * 2 // 3 + 2], fill=BLACK)
 
 
 def _wrap_text(text, font, max_width, draw):
@@ -199,17 +271,21 @@ def render_weather(data: dict, city: str) -> Image.Image:
         return img
 
     unit = data.get("temp_unit", "F")
+    icon_code = data.get("icon", "01d")
 
-    # ---- Top section: big temp + conditions ----
+    # ---- Weather icon (top left) ----
+    _draw_weather_icon(draw, 6, 18, icon_code)
+
+    # ---- Big temp to the right of icon ----
     temp_str = f"{data['temp']}\u00b0"
-    draw.text((6, 19), temp_str, font=FONT_XL, fill=BLACK)
+    draw.text((44, 19), temp_str, font=FONT_XL, fill=BLACK)
     temp_w = draw.textlength(temp_str, font=FONT_XL)
 
     # Unit label
-    draw.text((6 + temp_w, 22), unit, font=FONT_MD_B, fill=BLACK)
+    draw.text((44 + temp_w, 22), unit, font=FONT_MD_B, fill=BLACK)
 
-    # Condition + feels-like to the right of temp
-    right_x = 6 + temp_w + 20
+    # Condition + feels-like further right
+    right_x = 44 + temp_w + 16
     desc = data.get("description", "")
     draw.text((right_x, 22), desc, font=FONT_SM_B, fill=BLACK)
     draw.text((right_x, 36), f"Feels like {data['feels_like']}\u00b0", font=FONT_SM, fill=BLACK)
@@ -243,12 +319,6 @@ def render_weather(data: dict, city: str) -> Image.Image:
 # Screen: Air Quality
 # ---------------------------------------------------------------------------
 
-_AQI_LABELS = {1: "Good", 2: "Fair", 3: "Moderate", 4: "Poor", 5: "Very Poor"}
-
-# US AQI approximate ranges mapped from EU 1-5 scale
-_AQI_US_RANGES = {1: "0-50", 2: "51-100", 3: "101-150", 4: "151-200", 5: "201-300"}
-
-
 def render_air_quality(data: dict, city: str) -> Image.Image:
     img = _new_image()
     draw = ImageDraw.Draw(img)
@@ -256,38 +326,51 @@ def render_air_quality(data: dict, city: str) -> Image.Image:
 
     if not data:
         draw.text((10, 40), "No AQ data", font=FONT_MD, fill=BLACK)
-        draw.text((10, 58), "Set API key in panel", font=FONT_SM, fill=BLACK)
+        draw.text((10, 58), "Set IQAir API key in panel", font=FONT_SM, fill=BLACK)
         return img
 
     aqi = data["aqi"]
     label = data["label"]
-    us_range = _AQI_US_RANGES.get(aqi, "?")
+    main_poll = data.get("main_pollutant", "")
 
-    # ---- Big label: "Good", "Moderate", etc. ----
-    draw.text((6, 20), label, font=FONT_XL, fill=BLACK)
+    # ---- Big AQI number ----
+    aqi_str = str(aqi)
+    draw.text((6, 18), aqi_str, font=FONT_XL, fill=BLACK)
+    aqi_w = draw.textlength(aqi_str, font=FONT_XL)
 
-    # ---- AQI index + US range ----
-    draw.text((6, 54), f"AQI Index: {aqi}/5  (US ~{us_range})", font=FONT_MD, fill=BLACK)
+    # ---- Label + main pollutant to the right ----
+    draw.text((aqi_w + 14, 20), "US AQI", font=FONT_SM, fill=BLACK)
+    draw.text((aqi_w + 14, 34), label, font=FONT_MD_B, fill=BLACK)
 
-    # ---- Gauge bar (5 segments) ----
-    bar_y = 74
-    seg_w = 42
+    # ---- AQI gauge bar (6 segments: 0-50, 51-100, ..., 301-500) ----
+    bar_y = 58
+    seg_w = 36
     gap = 3
-    for i in range(5):
+    thresholds = [50, 100, 150, 200, 300, 500]
+    for i, thr in enumerate(thresholds):
         x0 = 6 + i * (seg_w + gap)
         x1 = x0 + seg_w
-        if i < aqi:
+        if aqi > (thresholds[i - 1] if i > 0 else 0):
             draw.rectangle([x0, bar_y, x1, bar_y + 10], fill=BLACK)
         else:
             draw.rectangle([x0, bar_y, x1, bar_y + 10], outline=BLACK, width=1)
 
-    # ---- Pollutant details ----
-    draw.line([(4, 90), (WIDTH - 4, 90)], fill=BLACK, width=1)
-    y = 95
-    draw.text((6, y), f"PM2.5: {data['pm2_5']}", font=FONT_SM, fill=BLACK)
-    draw.text((90, y), f"PM10: {data['pm10']}", font=FONT_SM, fill=BLACK)
-    draw.text((170, y), f"O\u2083: {data['o3']}", font=FONT_SM, fill=BLACK)
-    draw.text((6, y + 14), f"NO\u2082: {data['no2']}", font=FONT_SM, fill=BLACK)
+    # Scale labels
+    draw.text((6, bar_y + 13), "Good", font=FONT_XS, fill=BLACK)
+    mid_w = draw.textlength("Moderate", font=FONT_XS)
+    draw.text(((WIDTH - mid_w) // 2, bar_y + 13), "Moderate", font=FONT_XS, fill=BLACK)
+    haz = "Hazardous"
+    haz_w = draw.textlength(haz, font=FONT_XS)
+    draw.text((WIDTH - 6 - haz_w, bar_y + 13), haz, font=FONT_XS, fill=BLACK)
+
+    # ---- Details ----
+    draw.line([(4, 86), (WIDTH - 4, 86)], fill=BLACK, width=1)
+    y = 91
+    if main_poll:
+        draw.text((6, y), f"Main pollutant: {main_poll}", font=FONT_SM, fill=BLACK)
+    iq_city = data.get("city", "")
+    if iq_city:
+        draw.text((6, y + 14), f"Station: {iq_city}", font=FONT_XS, fill=BLACK)
 
     return img
 

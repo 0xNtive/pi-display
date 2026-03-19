@@ -125,6 +125,21 @@
   }
   .city-results .city-option:last-child { border-bottom: none; }
   .city-results .city-option:hover { background: var(--border); }
+  .autocomplete { position: relative; }
+  .autocomplete-results {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px;
+    max-height: 220px; overflow-y: auto; margin-top: -8px;
+  }
+  .autocomplete-results .ac-option {
+    padding: 8px 10px; cursor: pointer; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .autocomplete-results .ac-option:last-child { border-bottom: none; }
+  .autocomplete-results .ac-option:hover { background: var(--border); }
+  .ac-option .ac-sym { font-weight: 600; }
+  .ac-option .ac-name { color: var(--muted); font-size: 12px; }
+  .ac-option .ac-type { color: var(--muted); font-size: 11px; float: right; }
   @media (max-width: 420px) {
     body { padding: 10px; }
     .row { flex-direction: column; gap: 0; }
@@ -154,9 +169,9 @@
 <div class="card">
   <h2>Stock Tickers</h2>
   <div class="tag-list" id="stockTags"></div>
-  <div class="row">
-    <input type="text" id="stockInput" placeholder="e.g. AAPL, TSLA, ^GSPC for S&P500">
-    <div><button class="sm" id="btnAddStock" onclick="addTicker('stock')">Add</button></div>
+  <div class="autocomplete">
+    <input type="text" id="stockInput" placeholder="Search stocks, indices, commodities..." autocomplete="off">
+    <div class="autocomplete-results" id="stockResults" style="display:none"></div>
   </div>
   <div class="validation-msg" id="stockMsg"></div>
   <h2 style="margin-top:14px">Crypto</h2>
@@ -229,9 +244,11 @@
 <!-- API Keys -->
 <div class="card">
   <h2>API Keys</h2>
-  <label>OpenWeatherMap <span style="color:var(--muted)">(free tier — for weather & air quality)</span></label>
+  <label>OpenWeatherMap <span style="color:var(--muted)">(weather)</span></label>
   <input type="text" id="owmKey" placeholder="Paste your API key">
-  <button class="sm" onclick="saveApiKeys()">Save Key</button>
+  <label style="margin-top:8px">IQAir <span style="color:var(--muted)">(air quality — US AQI)</span></label>
+  <input type="text" id="iqairKey" placeholder="Paste your IQAir API key">
+  <button class="sm" onclick="saveApiKeys()">Save Keys</button>
 </div>
 
 <div class="toast" id="toast">Saved</div>
@@ -304,6 +321,7 @@ function renderAll() {
 
   // API keys
   document.getElementById('owmKey').value = config.api_keys.openweathermap || '';
+  document.getElementById('iqairKey').value = config.api_keys.iqair || '';
 }
 
 async function addTicker(type) {
@@ -404,9 +422,10 @@ async function saveDisplay() {
 async function saveApiKeys() {
   config.api_keys = {
     openweathermap: document.getElementById('owmKey').value.trim(),
+    iqair: document.getElementById('iqairKey').value.trim(),
   };
   await api('config', 'POST', { api_keys: config.api_keys });
-  toast('API key saved');
+  toast('API keys saved');
 }
 
 // City search
@@ -471,8 +490,63 @@ async function pollStatus() {
   } catch(e) {}
 }
 
-// Allow Enter key in inputs
-document.getElementById('stockInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker('stock'); });
+// Stock autocomplete
+let stockTimeout = null;
+document.getElementById('stockInput').addEventListener('input', (e) => {
+  clearTimeout(stockTimeout);
+  const q = e.target.value.trim();
+  if (q.length < 1) { document.getElementById('stockResults').style.display = 'none'; return; }
+  stockTimeout = setTimeout(async () => {
+    const results = await api('search/stock?q=' + encodeURIComponent(q));
+    const el = document.getElementById('stockResults');
+    if (results.length === 0) { el.style.display = 'none'; return; }
+    el.innerHTML = results.map((r, i) =>
+      `<div class="ac-option" onclick="selectStock(${i})">
+        <span class="ac-sym">${r.symbol}</span> <span class="ac-name">${r.name}</span>
+        <span class="ac-type">${r.type}</span>
+      </div>`
+    ).join('');
+    el.style.display = 'block';
+    window._stockResults = results;
+  }, 300);
+});
+
+async function selectStock(i) {
+  const r = window._stockResults[i];
+  const sym = r.symbol;
+  const msgEl = document.getElementById('stockMsg');
+  document.getElementById('stockResults').style.display = 'none';
+  document.getElementById('stockInput').value = '';
+
+  if (config.tickers.stocks.includes(sym)) {
+    msgEl.textContent = sym + ' already added';
+    msgEl.className = 'validation-msg err';
+    return;
+  }
+
+  msgEl.textContent = 'Adding ' + sym + '...';
+  msgEl.className = 'validation-msg loading';
+
+  const v = await api('validate/stock?symbol=' + encodeURIComponent(sym));
+  if (v.valid) {
+    config.tickers.stocks.push(sym);
+    await api('config', 'POST', { tickers: config.tickers });
+    msgEl.textContent = `Added ${sym} — ${r.name} ($${v.price})`;
+    msgEl.className = 'validation-msg ok';
+    toast('Added ' + sym);
+    renderAll();
+  } else {
+    msgEl.textContent = v.error || 'Could not verify ' + sym;
+    msgEl.className = 'validation-msg err';
+  }
+}
+
+document.getElementById('stockInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    document.getElementById('stockResults').style.display = 'none';
+    addTicker('stock');
+  }
+});
 document.getElementById('cryptoInput').addEventListener('keydown', e => { if (e.key === 'Enter') addTicker('crypto'); });
 
 // Init

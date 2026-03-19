@@ -125,9 +125,19 @@ def fetch_weather(lat: float, lon: float, api_key: str,
 
 
 # ---------------------------------------------------------------------------
-# Air Quality via OpenWeatherMap
+# Air Quality via IQAir (US AQI, 0-500 scale)
 # ---------------------------------------------------------------------------
-_AQI_LABELS = {1: "Good", 2: "Fair", 3: "Moderate", 4: "Poor", 5: "Very Poor"}
+_US_AQI_LABELS = [
+    (50, "Good"), (100, "Moderate"), (150, "Unhealthy for Sensitive"),
+    (200, "Unhealthy"), (300, "Very Unhealthy"), (500, "Hazardous"),
+]
+
+
+def _aqi_label(aqi: int) -> str:
+    for threshold, label in _US_AQI_LABELS:
+        if aqi <= threshold:
+            return label
+    return "Hazardous"
 
 
 def fetch_air_quality(lat: float, lon: float, api_key: str,
@@ -136,23 +146,22 @@ def fetch_air_quality(lat: float, lon: float, api_key: str,
         return None
 
     def _fetch():
-        url = (
-            "https://api.openweathermap.org/data/2.5/air_pollution"
-            f"?lat={lat}&lon={lon}&appid={api_key}"
-        )
-        r = requests.get(url, timeout=15)
+        url = "https://api.airvisual.com/v2/nearest_city"
+        r = requests.get(url, params={"lat": lat, "lon": lon, "key": api_key},
+                         timeout=15)
         r.raise_for_status()
-        d = r.json()
-        item = d["list"][0]
-        aqi = item["main"]["aqi"]
-        components = item["components"]
+        d = r.json()["data"]
+        pollution = d["current"]["pollution"]
+        aqi = pollution["aqius"]
+        main = pollution.get("mainus", "p2")
+        pollutant_names = {"p2": "PM2.5", "p1": "PM10", "o3": "O3",
+                           "n2": "NO2", "s2": "SO2", "co": "CO"}
         return {
             "aqi": aqi,
-            "label": _AQI_LABELS.get(aqi, "Unknown"),
-            "pm2_5": round(components.get("pm2_5", 0), 1),
-            "pm10": round(components.get("pm10", 0), 1),
-            "no2": round(components.get("no2", 0), 1),
-            "o3": round(components.get("o3", 0), 1),
+            "label": _aqi_label(aqi),
+            "main_pollutant": pollutant_names.get(main, main),
+            "city": d.get("city", ""),
+            "state": d.get("state", ""),
         }
 
     return _cached(f"aq_{lat}_{lon}", ttl, _fetch)
