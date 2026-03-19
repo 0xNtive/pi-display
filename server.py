@@ -31,6 +31,10 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        import shutil
+        shutil.copy(BASE_DIR / "config.example.json", CONFIG_PATH)
+        log.info("Created config.json from template")
     with open(CONFIG_PATH) as f:
         return json.load(f)
 

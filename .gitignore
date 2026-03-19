@@ -3,3 +3,4 @@ __pycache__/
 venv/
 .env
 previews/*_1x.png
+config.json
