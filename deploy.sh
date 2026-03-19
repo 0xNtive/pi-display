@@ -1,8 +1,8 @@
 #!/bin/bash
-# Enable pi-display to auto-start on boot
+# Set up pi-display service + auto-updater on boot
 #
 # Run on your Raspberry Pi:
-#   cd ~/pi-display && sudo bash deploy.sh
+#   cd ~/pi && sudo bash deploy.sh
 
 set -e
 
@@ -34,13 +34,41 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
+# ── Install auto-updater (checks GitHub every 5 min) ────────────
+cat > /etc/systemd/system/pi-display-updater.service <<EOF
+[Unit]
+Description=Pi Display Auto-Updater
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/bin/bash $INSTALL_DIR/autoupdate.sh
+EOF
+
+cat > /etc/systemd/system/pi-display-updater.timer <<EOF
+[Unit]
+Description=Check for pi-display updates every 5 minutes
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=300
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
+EOF
+
 systemctl daemon-reload
 systemctl enable pi-display.service
 systemctl restart pi-display.service
+systemctl enable --now pi-display-updater.timer
 
 echo ""
 echo "Done. pi-display will auto-start on every boot."
+echo "Auto-updater checks GitHub every 5 minutes."
 echo ""
-echo "  Status:  sudo systemctl status pi-display"
-echo "  Logs:    journalctl -u pi-display -f"
+echo "  Status:   sudo systemctl status pi-display"
+echo "  Updates:  sudo systemctl status pi-display-updater.timer"
+echo "  Logs:     journalctl -u pi-display -f"
 echo ""
