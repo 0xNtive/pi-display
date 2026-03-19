@@ -24,7 +24,13 @@
       "prices": true,
       "weather": true,
       "air_quality": true,
-      "headlines": true
+      "headlines": true,
+      "system": true
+    },
+    "night_mode": {
+      "enabled": true,
+      "start_hour": 23,
+      "end_hour": 7
     }
   },
   "api_keys": {

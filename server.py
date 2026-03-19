@@ -6,6 +6,7 @@ import sys
 import time
 import logging
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
@@ -53,13 +54,31 @@ _state = {
 
 
 def _get_enabled_screens(cfg):
-    order = ["prices", "weather", "air_quality", "headlines"]
+    order = ["prices", "weather", "air_quality", "headlines", "system"]
     enabled = cfg["display"]["screens_enabled"]
     return [s for s in order if enabled.get(s, False)]
 
 
+def _is_night_mode(cfg):
+    """Check if current time is within quiet hours."""
+    night = cfg["display"].get("night_mode", {})
+    if not night.get("enabled", False):
+        return False
+    now = datetime.now()
+    hour = now.hour
+    start = night.get("start_hour", 23)
+    end = night.get("end_hour", 7)
+    if start > end:  # wraps midnight (e.g. 23-7)
+        return hour >= start or hour < end
+    return start <= hour < end
+
+
 def _cycle_display(cfg):
     """Render and display the next screen."""
+    if _is_night_mode(cfg):
+        log.info("Night mode active — skipping refresh")
+        return
+
     screens = _get_enabled_screens(cfg)
     if not screens:
         display.display_image(
@@ -105,6 +124,9 @@ def _cycle_display(cfg):
     elif screen == "headlines":
         data = fetchers.fetch_headlines(cfg["headlines"]["feeds"])
         img = display.render_headlines(data or [])
+
+    elif screen == "system":
+        img = display.render_system_info()
 
     if img:
         display.display_image(img, simulate=_state["simulate"])
@@ -225,6 +247,8 @@ def preview_screen(screen_name):
     elif screen_name == "headlines":
         data = fetchers.fetch_headlines(cfg["headlines"]["feeds"])
         img = display.render_headlines(data or [])
+    elif screen_name == "system":
+        img = display.render_system_info()
 
     if img is None:
         img = display.render_error(f"Unknown screen: {screen_name}")

@@ -237,8 +237,24 @@
   <div style="margin-top:12px">
     <label>Cycle Interval (seconds)</label>
     <input type="number" id="cycleSeconds" min="15" max="300" value="45">
-    <button class="sm" onclick="saveDisplay()">Update</button>
   </div>
+  <div style="margin-top:12px; border-top: 1px solid var(--border); padding-top: 12px;">
+    <div class="toggle-row">
+      <span>Night Mode (pause display)</span>
+      <label class="toggle"><input type="checkbox" id="nightEnabled" onchange="saveDisplay()"><span class="slider"></span></label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>Stop at (hour)</label>
+        <input type="number" id="nightStart" min="0" max="23" value="23">
+      </div>
+      <div>
+        <label>Resume at (hour)</label>
+        <input type="number" id="nightEnd" min="0" max="23" value="7">
+      </div>
+    </div>
+  </div>
+  <button class="sm" style="margin-top:10px" onclick="saveDisplay()">Update</button>
 </div>
 
 <!-- API Keys -->
@@ -307,7 +323,7 @@ function renderAll() {
 
   // Screen toggles
   const screens = config.display.screens_enabled;
-  const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines'};
+  const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines', system:'System'};
   const st = document.getElementById('screenToggles');
   st.innerHTML = Object.entries(names).map(([k,v]) =>
     `<div class="toggle-row">
@@ -316,8 +332,12 @@ function renderAll() {
     </div>`
   ).join('');
 
-  // Cycle
+  // Cycle + night mode
   document.getElementById('cycleSeconds').value = config.display.cycle_seconds || 45;
+  const night = config.display.night_mode || {};
+  document.getElementById('nightEnabled').checked = night.enabled || false;
+  document.getElementById('nightStart').value = night.start_hour ?? 23;
+  document.getElementById('nightEnd').value = night.end_hour ?? 7;
 
   // API keys
   document.getElementById('owmKey').value = config.api_keys.openweathermap || '';
@@ -415,6 +435,11 @@ async function toggleScreen(key) {
 
 async function saveDisplay() {
   config.display.cycle_seconds = parseInt(document.getElementById('cycleSeconds').value) || 45;
+  config.display.night_mode = {
+    enabled: document.getElementById('nightEnabled').checked,
+    start_hour: parseInt(document.getElementById('nightStart').value) || 23,
+    end_hour: parseInt(document.getElementById('nightEnd').value) || 7,
+  };
   await api('config', 'POST', { display: config.display });
   toast('Display settings saved');
 }
@@ -481,7 +506,7 @@ document.getElementById('btnPreview').addEventListener('click', async () => {
 async function pollStatus() {
   try {
     const s = await api('status');
-    const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines'};
+    const names = {prices:'Prices', weather:'Weather', air_quality:'Air Quality', headlines:'Headlines', system:'System'};
     document.getElementById('currentScreen').textContent = 'Screen: ' + (names[s.current_screen] || s.current_screen);
     document.getElementById('statusDot').classList.toggle('paused', s.paused);
     document.getElementById('btnPause').textContent = s.paused ? 'Resume' : 'Pause';

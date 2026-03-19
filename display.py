@@ -74,12 +74,13 @@ def _new_image():
 
 
 def _header_bar(draw, title, y=0, height=17):
-    """Draw an inverted (white on black) header bar with current time."""
+    """Draw an inverted (white on black) header bar with date and time."""
     draw.rectangle([0, y, WIDTH - 1, y + height - 1], fill=BLACK)
     draw.text((4, y + 1), title.upper(), fill=WHITE, font=FONT_SM_B)
-    now = datetime.now().strftime("%H:%M")
-    tw = draw.textlength(now, font=FONT_XS)
-    draw.text((WIDTH - tw - 4, y + 4), now, fill=WHITE, font=FONT_XS)
+    now = datetime.now()
+    date_time = now.strftime("%b %d  %H:%M")
+    tw = draw.textlength(date_time, font=FONT_XS)
+    draw.text((WIDTH - tw - 4, y + 4), date_time, fill=WHITE, font=FONT_XS)
 
 
 def _dotted_hline(draw, y, x0=4, x1=None):
@@ -200,55 +201,77 @@ def _format_price(price):
 # Screen: Prices
 # ---------------------------------------------------------------------------
 
+_price_page = 0
+_PRICE_ROWS = 5
+_BIG_MOVER_PCT = 5.0
+
+
 def render_prices(tickers: list[dict]) -> Image.Image:
+    global _price_page
     img = _new_image()
     draw = ImageDraw.Draw(img)
-    _header_bar(draw, "Prices")
 
     if not tickers:
+        _header_bar(draw, "Prices")
         draw.text((10, 45), "No tickers configured", font=FONT_MD, fill=BLACK)
         return img
 
-    # Column positions
+    # Pagination
+    total_pages = max(1, math.ceil(len(tickers) / _PRICE_ROWS))
+    _price_page = _price_page % total_pages
+    start = _price_page * _PRICE_ROWS
+    page_tickers = tickers[start:start + _PRICE_ROWS]
+    _price_page += 1
+
+    if total_pages > 1:
+        page_num = _price_page  # already incremented
+        _header_bar(draw, f"Prices {page_num}/{total_pages}")
+    else:
+        _header_bar(draw, "Prices")
+
     COL_SYM = 4
-    PRICE_RIGHT = 140  # right edge of price column
-    max_rows = 5
+    PRICE_RIGHT = 140
     row_h = 17
     y = 20
 
-    for i, t in enumerate(tickers[:max_rows]):
-        sym = t["symbol"][:5]
+    for i, t in enumerate(page_tickers):
+        sym = t["symbol"][:6]
         price_str = _format_price(t.get("price"))
         pct = t.get("change_pct", 0)
+        is_big_mover = abs(pct) >= _BIG_MOVER_PCT
+
+        # Highlight big movers with inverted row
+        if is_big_mover:
+            draw.rectangle([0, y - 1, WIDTH - 1, y + row_h - 4], fill=BLACK)
+
+        fg = WHITE if is_big_mover else BLACK
 
         # Symbol (bold)
-        draw.text((COL_SYM, y), sym, font=FONT_SM_B, fill=BLACK)
+        draw.text((COL_SYM, y), sym, font=FONT_SM_B, fill=fg)
 
         # Price (right-aligned to PRICE_RIGHT)
         pw = draw.textlength(price_str, font=FONT_SM)
-        draw.text((PRICE_RIGHT - pw, y), price_str, font=FONT_SM, fill=BLACK)
+        draw.text((PRICE_RIGHT - pw, y), price_str, font=FONT_SM, fill=fg)
 
         # Change % with direction indicator
         sign = "+" if pct > 0 else ""
         chg_str = f"{sign}{pct:.1f}%"
         tw = draw.textlength(chg_str, font=FONT_SM)
         chg_x = WIDTH - tw - 4
-        draw.text((chg_x, y), chg_str, font=FONT_SM, fill=BLACK)
+        draw.text((chg_x, y), chg_str, font=FONT_SM, fill=fg)
 
-        # Small filled/empty triangle as direction indicator
+        # Triangle direction indicator
         tri_x = chg_x - 9
         tri_cy = y + 6
         if pct > 0:
-            # Up triangle (filled)
             draw.polygon([(tri_x, tri_cy + 4), (tri_x + 7, tri_cy + 4),
-                          (tri_x + 3, tri_cy - 3)], fill=BLACK)
+                          (tri_x + 3, tri_cy - 3)], fill=fg)
         elif pct < 0:
-            # Down triangle (filled)
             draw.polygon([(tri_x, tri_cy - 3), (tri_x + 7, tri_cy - 3),
-                          (tri_x + 3, tri_cy + 4)], fill=BLACK)
+                          (tri_x + 3, tri_cy + 4)], fill=fg)
 
         # Separator between rows
-        if i < min(len(tickers), max_rows) - 1:
+        if not is_big_mover and i < len(page_tickers) - 1:
             _dotted_hline(draw, y + row_h - 3)
 
         y += row_h
@@ -425,6 +448,75 @@ def render_headlines(headlines: list[dict]) -> Image.Image:
     page_str = f"{_headline_index}/{len(headlines)}"
     pw = draw.textlength(page_str, font=FONT_XS)
     draw.text((WIDTH - pw - 6, HEIGHT - 12), page_str, font=FONT_XS, fill=BLACK)
+
+    return img
+
+
+# ---------------------------------------------------------------------------
+# Screen: System Info
+# ---------------------------------------------------------------------------
+
+def render_system_info() -> Image.Image:
+    import subprocess
+    img = _new_image()
+    draw = ImageDraw.Draw(img)
+    _header_bar(draw, "System")
+
+    y = 22
+
+    # CPU temperature
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            cpu_temp = int(f.read().strip()) / 1000
+        draw.text((6, y), f"CPU Temp: {cpu_temp:.1f}C", font=FONT_MD_B, fill=BLACK)
+    except Exception:
+        draw.text((6, y), "CPU Temp: --", font=FONT_MD_B, fill=BLACK)
+    y += 20
+
+    # IP address
+    try:
+        ip = subprocess.check_output(["hostname", "-I"], timeout=5).decode().split()[0]
+    except Exception:
+        ip = "--"
+    draw.text((6, y), f"IP: {ip}", font=FONT_SM, fill=BLACK)
+    y += 16
+
+    # Uptime
+    try:
+        with open("/proc/uptime") as f:
+            secs = int(float(f.read().split()[0]))
+        days, rem = divmod(secs, 86400)
+        hours, rem = divmod(rem, 3600)
+        mins = rem // 60
+        if days > 0:
+            uptime_str = f"{days}d {hours}h {mins}m"
+        else:
+            uptime_str = f"{hours}h {mins}m"
+        draw.text((6, y), f"Uptime: {uptime_str}", font=FONT_SM, fill=BLACK)
+    except Exception:
+        draw.text((6, y), "Uptime: --", font=FONT_SM, fill=BLACK)
+    y += 16
+
+    # Memory
+    try:
+        with open("/proc/meminfo") as f:
+            lines = f.readlines()
+        mem_total = int(lines[0].split()[1]) // 1024
+        mem_avail = int(lines[2].split()[1]) // 1024
+        mem_used = mem_total - mem_avail
+        draw.text((6, y), f"RAM: {mem_used}MB / {mem_total}MB", font=FONT_SM, fill=BLACK)
+    except Exception:
+        draw.text((6, y), "RAM: --", font=FONT_SM, fill=BLACK)
+    y += 16
+
+    # Disk
+    try:
+        stat = os.statvfs("/")
+        total_gb = (stat.f_blocks * stat.f_frsize) / (1024 ** 3)
+        free_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
+        draw.text((6, y), f"Disk: {free_gb:.1f}GB free / {total_gb:.1f}GB", font=FONT_SM, fill=BLACK)
+    except Exception:
+        draw.text((6, y), "Disk: --", font=FONT_SM, fill=BLACK)
 
     return img
 
