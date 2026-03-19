@@ -32,28 +32,31 @@ def _cached(key, ttl_seconds, fetch_fn):
 
 
 # ---------------------------------------------------------------------------
-# Stock prices via yfinance
+# Stock prices via Yahoo Finance API (no yfinance/pandas dependency)
 # ---------------------------------------------------------------------------
 def fetch_stocks(symbols: list[str], ttl: int = 120) -> list[dict] | None:
     def _fetch():
-        import yfinance as yf
-
         results = []
-        tickers = yf.Tickers(" ".join(symbols))
+        url = "https://query1.finance.yahoo.com/v7/finance/quote"
+        params = {
+            "symbols": ",".join(symbols),
+            "fields": "regularMarketPrice,regularMarketChangePercent",
+        }
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, params=params, headers=headers, timeout=15)
+        r.raise_for_status()
+        quotes = r.json().get("quoteResponse", {}).get("result", [])
+        quote_map = {q["symbol"]: q for q in quotes}
         for sym in symbols:
-            try:
-                t = tickers.tickers[sym]
-                info = t.fast_info
-                price = info.last_price
-                prev = info.previous_close
-                change_pct = ((price - prev) / prev) * 100 if prev else 0
+            q = quote_map.get(sym)
+            if q:
                 results.append({
                     "symbol": sym,
-                    "price": price,
-                    "change_pct": round(change_pct, 2),
+                    "price": q.get("regularMarketPrice"),
+                    "change_pct": round(q.get("regularMarketChangePercent", 0), 2),
                 })
-            except Exception as e:
-                log.warning("Stock %s error: %s", sym, e)
+            else:
+                log.warning("Stock %s: no data returned", sym)
                 results.append({"symbol": sym, "price": None, "change_pct": 0})
         return results
 

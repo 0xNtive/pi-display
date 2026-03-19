@@ -1,11 +1,10 @@
 #!/bin/bash
-# Pi Display - One-command setup for Raspberry Pi
+# Pi Display - Fast installer for Raspberry Pi
 #
-# Usage (from a fresh Pi with network):
-#   git clone https://github.com/YOUR_USER/pi.git ~/pi-display
-#   cd ~/pi-display && sudo bash install.sh
+# Usage:
+#   cd ~/pi && sudo bash install.sh
 #
-# Or re-run anytime to update.
+# Uses apt packages (pre-compiled) instead of pip to avoid slow builds on Pi Zero.
 
 set -e
 
@@ -33,25 +32,27 @@ echo "  │   E-ink Tabletop Dashboard  │"
 echo "  └─────────────────────────────┘"
 echo -e "${RST}"
 
-# ── Check prerequisites ─────────────────────────────────────────
-
 if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}Error: Run with sudo →  sudo bash install.sh${RST}"
     exit 1
 fi
 
-# ── 1. System packages ──────────────────────────────────────────
+# ── 1. System packages (all pre-compiled, fast) ──────────────────
 
 step 1 "Installing system packages"
 info "Updating package lists..."
 apt-get update -qq
-PKGS="python3 python3-pip python3-venv python3-dev fonts-dejavu-core libopenjp2-7 libatlas-base-dev git"
+
+# Core + Python packages via apt (no compilation needed)
+PKGS="python3 python3-pip python3-venv python3-dev git"
+PKGS="$PKGS fonts-dejavu-core libopenjp2-7 libatlas-base-dev"
 # libtiff6 or libtiff5 depending on OS version
 apt-cache show libtiff6 >/dev/null 2>&1 && PKGS="$PKGS libtiff6" || PKGS="$PKGS libtiff5"
-for pkg in $PKGS; do
-    info "Installing $pkg..."
-    apt-get install -y -qq "$pkg" 2>/dev/null || warn "Could not install $pkg (may be ok)"
-done
+# Python libraries as apt packages (pre-compiled, instant install)
+PKGS="$PKGS python3-flask python3-pil python3-requests python3-feedparser python3-rpi.gpio python3-spidev"
+
+info "Installing packages..."
+apt-get install -y -qq $PKGS 2>/dev/null
 ok "System packages installed"
 
 # ── 2. Enable SPI ───────────────────────────────────────────────
@@ -76,39 +77,27 @@ else
     ok "SPI already enabled"
 fi
 
-# ── 3. Python venv + deps ───────────────────────────────────────
+# ── 3. Python venv + inky ────────────────────────────────────────
 
 step 3 "Setting up Python environment"
 
-# Use disk-based temp dir — Pi Zero's tmpfs is too small for pip builds
 export TMPDIR="/var/tmp/pip-build"
 mkdir -p "$TMPDIR"
 
-info "Creating venv at $INSTALL_DIR/venv"
-python3 -m venv "$INSTALL_DIR/venv"
-info "Upgrading pip..."
-"$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
-info "Installing Python packages (this takes a few minutes on Pi Zero)..."
-info "Temp dir: $TMPDIR ($(df -h "$TMPDIR" | tail -1 | awk '{print $4}') free)"
-info "Disk: $(df -h / | tail -1 | awk '{print $4}') free on /"
-while IFS= read -r pkg || [ -n "$pkg" ]; do
-    # skip blank lines and comments
-    [ -z "$pkg" ] && continue
-    [[ "$pkg" =~ ^# ]] && continue
-    # strip version specifier to get base package name for check
-    pkg_name=$(echo "$pkg" | sed 's/[>=<\[].*//')
-    if "$INSTALL_DIR/venv/bin/pip" show "$pkg_name" >/dev/null 2>&1; then
-        ok "$pkg_name already installed — skipping"
-        continue
-    fi
-    info "Installing $pkg..."
-    "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir "$pkg" || {
-        warn "Failed to install $pkg"
-        warn "Disk: $(df -h / | tail -1 | awk '{print $4}') free on /"
-        warn "Temp: $(df -h "$TMPDIR" | tail -1 | awk '{print $4}') free on $TMPDIR"
+info "Creating venv (with system packages)..."
+python3 -m venv --system-site-packages "$INSTALL_DIR/venv"
+
+# Only pip-install inky — everything else comes from apt
+pkg_name="inky"
+if "$INSTALL_DIR/venv/bin/pip" show "$pkg_name" >/dev/null 2>&1; then
+    ok "inky already installed — skipping"
+else
+    info "Installing inky[rpi] (only pip package needed)..."
+    "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir "inky[rpi]>=1.5" || {
+        warn "Failed to install inky"
         exit 1
     }
-done < "$INSTALL_DIR/requirements.txt"
+fi
 ok "Python environment ready"
 
 # ── 4. Systemd service ──────────────────────────────────────────
@@ -152,7 +141,6 @@ echo ""
 echo -e "${BLD}─── Quick Setup ───${RST}"
 echo ""
 
-# Check if API key already set
 EXISTING_KEY=$(python3 -c "import json; print(json.load(open('$INSTALL_DIR/config.json'))['api_keys']['openweathermap'])" 2>/dev/null || echo "")
 
 if [ -z "$EXISTING_KEY" ]; then
