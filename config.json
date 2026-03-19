@@ -12,10 +12,11 @@
   "headlines": {
     "enabled": true,
     "feeds": [
-      {"name": "BBC News", "url": "https://feeds.bbci.co.uk/news/rss.xml", "enabled": true},
-      {"name": "BBC Tech", "url": "https://feeds.bbci.co.uk/news/technology/rss.xml", "enabled": true},
-      {"name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml", "enabled": true},
-      {"name": "Hacker News", "url": "https://hnrss.org/frontpage", "enabled": true}
+      {"name": "Bloomberg", "url": "https://feeds.bloomberg.com/markets/news.rss", "enabled": true},
+      {"name": "CNBC", "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html", "enabled": true},
+      {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml", "enabled": true},
+      {"name": "NPR News", "url": "https://feeds.npr.org/1001/rss.xml", "enabled": false},
+      {"name": "Hacker News", "url": "https://hnrss.org/frontpage", "enabled": false}
     ]
   },
   "display": {
