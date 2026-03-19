@@ -55,27 +55,25 @@ info "Installing packages..."
 apt-get install -y -qq $PKGS 2>/dev/null
 ok "System packages installed"
 
-# ── 2. Enable SPI ───────────────────────────────────────────────
+# ── 2. Enable SPI + I2C + SPI overlay ────────────────────────────
 
-step 2 "Enabling SPI interface"
+step 2 "Enabling SPI and I2C interfaces"
 
-spi_enabled=false
-for cfg in /boot/firmware/config.txt /boot/config.txt; do
-    if [ -f "$cfg" ] && grep -q "^dtparam=spi=on" "$cfg" 2>/dev/null; then
-        spi_enabled=true
-        break
+CONFIG_FILE="/boot/config.txt"
+[ -f /boot/firmware/config.txt ] && CONFIG_FILE="/boot/firmware/config.txt"
+
+for param in "dtparam=spi=on" "dtparam=i2c_arm=on" "dtoverlay=spi0-0cs"; do
+    if ! grep -q "^${param}$" "$CONFIG_FILE" 2>/dev/null; then
+        echo "$param" >> "$CONFIG_FILE"
+        ok "Added $param"
+        NEED_REBOOT=true
+    else
+        ok "$param already set"
     fi
 done
 
-if [ "$spi_enabled" = false ]; then
-    CONFIG_FILE="/boot/config.txt"
-    [ -f /boot/firmware/config.txt ] && CONFIG_FILE="/boot/firmware/config.txt"
-    echo "dtparam=spi=on" >> "$CONFIG_FILE"
-    ok "SPI enabled in $CONFIG_FILE"
-    NEED_REBOOT=true
-else
-    ok "SPI already enabled"
-fi
+raspi-config nonint do_i2c 0 2>/dev/null || true
+raspi-config nonint do_spi 0 2>/dev/null || true
 
 # ── 3. Python venv + inky ────────────────────────────────────────
 

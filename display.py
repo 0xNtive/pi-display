@@ -1,4 +1,4 @@
-"""Render screens for the Inky pHAT (212x104, black & white).
+"""Render screens for the Inky pHAT (250x122, black & white).
 
 Renders in grayscale ("L" mode) for correct previews, then converts
 to the Inky's palette format at display time.
@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 log = logging.getLogger(__name__)
 
-WIDTH, HEIGHT = 212, 104
+WIDTH, HEIGHT = 250, 122
 BLACK = 0
 WHITE = 255
 
@@ -390,13 +390,8 @@ def display_image(img: Image.Image, simulate: bool = False):
         return
 
     try:
-        try:
-            from inky.auto import auto
-            inky_display = auto()
-        except RuntimeError:
-            from inky import InkyPHAT
-            log.info("EEPROM not found, falling back to InkyPHAT")
-            inky_display = InkyPHAT("black")
+        from inky.auto import auto
+        inky_display = auto()
         pal_img = _to_inky_palette(img)
         inky_display.set_image(pal_img)
         inky_display.show()
