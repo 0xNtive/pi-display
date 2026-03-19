@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
+import requests as http_requests
 
 import data_fetchers as fetchers
 import display
@@ -236,8 +237,66 @@ def preview_screen(screen_name):
     return send_file(buf, mimetype="image/png")
 
 
-WIDTH_PREVIEW = 212 * 3
-HEIGHT_PREVIEW = 104 * 3
+WIDTH_PREVIEW = 250 * 3
+HEIGHT_PREVIEW = 122 * 3
+
+
+@app.route("/api/validate/stock")
+def validate_stock():
+    sym = request.args.get("symbol", "").upper()
+    if not sym:
+        return jsonify({"valid": False, "error": "No symbol"})
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+        r = http_requests.get(url, params={"range": "1d", "interval": "1d"},
+                              headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        data = r.json()
+        result = data.get("chart", {}).get("result")
+        if result and result[0].get("meta", {}).get("regularMarketPrice"):
+            price = result[0]["meta"]["regularMarketPrice"]
+            name = result[0]["meta"].get("shortName", sym)
+            return jsonify({"valid": True, "symbol": sym, "price": price, "name": name})
+        return jsonify({"valid": False, "error": f"'{sym}' not found"})
+    except Exception as e:
+        return jsonify({"valid": False, "error": str(e)})
+
+
+@app.route("/api/validate/crypto")
+def validate_crypto():
+    coin = request.args.get("id", "").lower()
+    if not coin:
+        return jsonify({"valid": False, "error": "No coin ID"})
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        r = http_requests.get(url, params={"ids": coin, "vs_currencies": "usd"}, timeout=10)
+        data = r.json()
+        if coin in data and "usd" in data[coin]:
+            return jsonify({"valid": True, "id": coin, "price": data[coin]["usd"]})
+        return jsonify({"valid": False, "error": f"'{coin}' not found on CoinGecko"})
+    except Exception as e:
+        return jsonify({"valid": False, "error": str(e)})
+
+
+@app.route("/api/geocode")
+def geocode():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify([])
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        r = http_requests.get(url, params={"q": q, "format": "json", "limit": 5,
+                                            "addressdetails": 1},
+                              headers={"User-Agent": "PiDisplay/1.0"}, timeout=10)
+        results = []
+        for item in r.json():
+            results.append({
+                "name": item.get("display_name", ""),
+                "lat": float(item["lat"]),
+                "lon": float(item["lon"]),
+            })
+        return jsonify(results)
+    except Exception as e:
+        return jsonify([])
 
 
 # ---------------------------------------------------------------------------

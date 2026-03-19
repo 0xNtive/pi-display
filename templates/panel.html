@@ -110,6 +110,21 @@
     pointer-events: none; z-index: 100;
   }
   .toast.show { opacity: 1; }
+  .toast.error { background: var(--danger); color: #fff; }
+  .validation-msg { font-size: 12px; margin-bottom: 8px; min-height: 16px; }
+  .validation-msg.ok { color: var(--success); }
+  .validation-msg.err { color: var(--danger); }
+  .validation-msg.loading { color: var(--muted); }
+  .city-results {
+    background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px;
+    margin-top: -8px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;
+  }
+  .city-results .city-option {
+    padding: 8px 10px; cursor: pointer; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .city-results .city-option:last-child { border-bottom: none; }
+  .city-results .city-option:hover { background: var(--border); }
   @media (max-width: 420px) {
     body { padding: 10px; }
     .row { flex-direction: column; gap: 0; }
@@ -140,24 +155,31 @@
   <h2>Stock Tickers</h2>
   <div class="tag-list" id="stockTags"></div>
   <div class="row">
-    <input type="text" id="stockInput" placeholder="e.g. AAPL, TSLA">
-    <div><button class="sm" onclick="addTicker('stock')">Add</button></div>
+    <input type="text" id="stockInput" placeholder="e.g. AAPL, TSLA, ^GSPC for S&P500">
+    <div><button class="sm" id="btnAddStock" onclick="addTicker('stock')">Add</button></div>
   </div>
+  <div class="validation-msg" id="stockMsg"></div>
   <h2 style="margin-top:14px">Crypto</h2>
   <div class="tag-list" id="cryptoTags"></div>
   <div class="row">
     <input type="text" id="cryptoInput" placeholder="e.g. bitcoin, solana">
-    <div><button class="sm" onclick="addTicker('crypto')">Add</button></div>
+    <div><button class="sm" id="btnAddCrypto" onclick="addTicker('crypto')">Add</button></div>
   </div>
+  <div class="validation-msg" id="cryptoMsg"></div>
 </div>
 
 <!-- Weather & AQ -->
 <div class="card">
   <h2>Weather & Air Quality</h2>
+  <div>
+    <label>Search City</label>
+    <input type="text" id="citySearch" placeholder="Type a city name..." autocomplete="off">
+    <div class="city-results" id="cityResults" style="display:none"></div>
+  </div>
   <div class="row">
     <div>
-      <label>City Name</label>
-      <input type="text" id="cityName" placeholder="New York">
+      <label>Selected Location</label>
+      <input type="text" id="cityName" placeholder="New York" readonly style="color:var(--muted)">
     </div>
     <div>
       <label>Units</label>
@@ -169,12 +191,12 @@
   </div>
   <div class="row">
     <div>
-      <label>Latitude</label>
-      <input type="text" id="lat" placeholder="40.7128">
+      <label>Lat</label>
+      <input type="text" id="lat" placeholder="40.7128" readonly style="color:var(--muted)">
     </div>
     <div>
-      <label>Longitude</label>
-      <input type="text" id="lon" placeholder="-74.006">
+      <label>Lon</label>
+      <input type="text" id="lon" placeholder="-74.006" readonly style="color:var(--muted)">
     </div>
   </div>
   <button class="sm" onclick="saveWeather()">Update Location</button>
@@ -286,17 +308,41 @@ function renderAll() {
 
 async function addTicker(type) {
   const input = document.getElementById(type === 'stock' ? 'stockInput' : 'cryptoInput');
+  const msgEl = document.getElementById(type === 'stock' ? 'stockMsg' : 'cryptoMsg');
   const val = input.value.trim();
   if (!val) return;
   const key = type === 'stock' ? 'stocks' : 'crypto';
   const formatted = type === 'stock' ? val.toUpperCase() : val.toLowerCase();
-  if (!config.tickers[key].includes(formatted)) {
+
+  if (config.tickers[key].includes(formatted)) {
+    msgEl.textContent = formatted + ' already added';
+    msgEl.className = 'validation-msg err';
+    return;
+  }
+
+  msgEl.textContent = 'Checking ' + formatted + '...';
+  msgEl.className = 'validation-msg loading';
+
+  const endpoint = type === 'stock'
+    ? 'validate/stock?symbol=' + encodeURIComponent(formatted)
+    : 'validate/crypto?id=' + encodeURIComponent(formatted);
+  const r = await api(endpoint);
+
+  if (r.valid) {
     config.tickers[key].push(formatted);
     await api('config', 'POST', { tickers: config.tickers });
+    const info = type === 'stock'
+      ? `Added ${formatted} ($${r.price})`
+      : `Added ${formatted} ($${r.price})`;
+    msgEl.textContent = info;
+    msgEl.className = 'validation-msg ok';
     toast('Added ' + formatted);
+    input.value = '';
+    renderAll();
+  } else {
+    msgEl.textContent = r.error || 'Not found';
+    msgEl.className = 'validation-msg err';
   }
-  input.value = '';
-  renderAll();
 }
 
 async function removeTicker(type, sym) {
@@ -361,6 +407,34 @@ async function saveApiKeys() {
   };
   await api('config', 'POST', { api_keys: config.api_keys });
   toast('API key saved');
+}
+
+// City search
+let cityTimeout = null;
+document.getElementById('citySearch').addEventListener('input', (e) => {
+  clearTimeout(cityTimeout);
+  const q = e.target.value.trim();
+  if (q.length < 2) { document.getElementById('cityResults').style.display = 'none'; return; }
+  cityTimeout = setTimeout(async () => {
+    const results = await api('geocode?q=' + encodeURIComponent(q));
+    const el = document.getElementById('cityResults');
+    if (results.length === 0) { el.style.display = 'none'; return; }
+    el.innerHTML = results.map((r, i) =>
+      `<div class="city-option" onclick="selectCity(${i})">${r.name}</div>`
+    ).join('');
+    el.style.display = 'block';
+    window._cityResults = results;
+  }, 400);
+});
+
+function selectCity(i) {
+  const r = window._cityResults[i];
+  const short = r.name.split(',')[0];
+  document.getElementById('cityName').value = short;
+  document.getElementById('lat').value = r.lat.toFixed(4);
+  document.getElementById('lon').value = r.lon.toFixed(4);
+  document.getElementById('citySearch').value = '';
+  document.getElementById('cityResults').style.display = 'none';
 }
 
 // Controls
