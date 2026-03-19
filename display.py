@@ -201,13 +201,42 @@ def _format_price(price):
 # Screen: Prices
 # ---------------------------------------------------------------------------
 
-_price_page = 0
-_PRICE_ROWS = 5
-_BIG_MOVER_PCT = 5.0
+_ticker_index = 0
+
+
+def _draw_sparkline(draw, spark, x, y, w, h, prev_close=None):
+    """Draw a sparkline chart from price data."""
+    if len(spark) < 2:
+        return
+    mn = min(spark)
+    mx = max(spark)
+    if mn == mx:
+        mx = mn + 1  # avoid division by zero
+
+    # Include prev_close in scale so the baseline is visible
+    if prev_close is not None:
+        mn = min(mn, prev_close)
+        mx = max(mx, prev_close)
+
+    # Draw previous close baseline (dotted)
+    if prev_close is not None:
+        base_y = y + h - int((prev_close - mn) / (mx - mn) * h)
+        for bx in range(x, x + w, 4):
+            draw.point((bx, base_y), fill=BLACK)
+
+    # Draw the sparkline
+    points = []
+    for i, val in enumerate(spark):
+        px = x + int(i / (len(spark) - 1) * (w - 1))
+        py = y + h - int((val - mn) / (mx - mn) * h)
+        points.append((px, py))
+
+    for i in range(len(points) - 1):
+        draw.line([points[i], points[i + 1]], fill=BLACK, width=2)
 
 
 def render_prices(tickers: list[dict]) -> Image.Image:
-    global _price_page
+    global _ticker_index
     img = _new_image()
     draw = ImageDraw.Draw(img)
 
@@ -216,65 +245,57 @@ def render_prices(tickers: list[dict]) -> Image.Image:
         draw.text((10, 45), "No tickers configured", font=FONT_MD, fill=BLACK)
         return img
 
-    # Pagination
-    total_pages = max(1, math.ceil(len(tickers) / _PRICE_ROWS))
-    _price_page = _price_page % total_pages
-    start = _price_page * _PRICE_ROWS
-    page_tickers = tickers[start:start + _PRICE_ROWS]
-    _price_page += 1
+    # Cycle through tickers one at a time
+    _ticker_index = _ticker_index % len(tickers)
+    t = tickers[_ticker_index]
+    _ticker_index += 1
 
-    if total_pages > 1:
-        page_num = _price_page  # already incremented
-        _header_bar(draw, f"Prices {page_num}/{total_pages}")
-    else:
-        _header_bar(draw, "Prices")
+    sym = t["symbol"]
+    name = t.get("name", sym)
+    price_str = _format_price(t.get("price"))
+    pct = t.get("change_pct", 0)
+    spark = t.get("spark", [])
+    prev_close = t.get("prev_close")
 
-    COL_SYM = 4
-    PRICE_RIGHT = 140
-    row_h = 17
-    y = 20
+    # Header with name and symbol
+    display_name = name if len(name) <= 20 else name[:20]
+    _header_bar(draw, f"{display_name} ({sym})")
 
-    for i, t in enumerate(page_tickers):
-        sym = t["symbol"][:6]
-        price_str = _format_price(t.get("price"))
-        pct = t.get("change_pct", 0)
-        is_big_mover = abs(pct) >= _BIG_MOVER_PCT
+    # Sparkline chart — main area
+    chart_y = 20
+    chart_h = 60
+    chart_x = 6
+    chart_w = WIDTH - 12
+    _draw_sparkline(draw, spark, chart_x, chart_y, chart_w, chart_h, prev_close)
 
-        # Highlight big movers with inverted row
-        if is_big_mover:
-            draw.rectangle([0, y - 1, WIDTH - 1, y + row_h - 4], fill=BLACK)
+    # Price and change below chart
+    y = chart_y + chart_h + 6
 
-        fg = WHITE if is_big_mover else BLACK
+    # Big price
+    draw.text((6, y), price_str, font=FONT_LG, fill=BLACK)
+    price_w = draw.textlength(price_str, font=FONT_LG)
 
-        # Symbol (bold)
-        draw.text((COL_SYM, y), sym, font=FONT_SM_B, fill=fg)
+    # Change % with triangle
+    sign = "+" if pct > 0 else ""
+    chg_str = f"{sign}{pct:.2f}%"
+    tw = draw.textlength(chg_str, font=FONT_MD_B)
+    chg_x = WIDTH - tw - 6
+    draw.text((chg_x, y + 4), chg_str, font=FONT_MD_B, fill=BLACK)
 
-        # Price (right-aligned to PRICE_RIGHT)
-        pw = draw.textlength(price_str, font=FONT_SM)
-        draw.text((PRICE_RIGHT - pw, y), price_str, font=FONT_SM, fill=fg)
+    # Triangle
+    tri_x = chg_x - 12
+    tri_cy = y + 12
+    if pct > 0:
+        draw.polygon([(tri_x, tri_cy + 5), (tri_x + 9, tri_cy + 5),
+                      (tri_x + 4, tri_cy - 4)], fill=BLACK)
+    elif pct < 0:
+        draw.polygon([(tri_x, tri_cy - 4), (tri_x + 9, tri_cy - 4),
+                      (tri_x + 4, tri_cy + 5)], fill=BLACK)
 
-        # Change % with direction indicator
-        sign = "+" if pct > 0 else ""
-        chg_str = f"{sign}{pct:.1f}%"
-        tw = draw.textlength(chg_str, font=FONT_SM)
-        chg_x = WIDTH - tw - 4
-        draw.text((chg_x, y), chg_str, font=FONT_SM, fill=fg)
-
-        # Triangle direction indicator
-        tri_x = chg_x - 9
-        tri_cy = y + 6
-        if pct > 0:
-            draw.polygon([(tri_x, tri_cy + 4), (tri_x + 7, tri_cy + 4),
-                          (tri_x + 3, tri_cy - 3)], fill=fg)
-        elif pct < 0:
-            draw.polygon([(tri_x, tri_cy - 3), (tri_x + 7, tri_cy - 3),
-                          (tri_x + 3, tri_cy + 4)], fill=fg)
-
-        # Separator between rows
-        if not is_big_mover and i < len(page_tickers) - 1:
-            _dotted_hline(draw, y + row_h - 3)
-
-        y += row_h
+    # Page indicator
+    page_str = f"{_ticker_index}/{len(tickers)}"
+    pw = draw.textlength(page_str, font=FONT_XS)
+    draw.text((WIDTH - pw - 6, HEIGHT - 12), page_str, font=FONT_XS, fill=BLACK)
 
     return img
 

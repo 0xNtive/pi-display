@@ -41,22 +41,29 @@ def fetch_stocks(symbols: list[str], ttl: int = 120) -> list[dict] | None:
         for sym in symbols:
             try:
                 url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
-                params = {"range": "1d", "interval": "1d"}
+                params = {"range": "1d", "interval": "5m"}
                 r = requests.get(url, params=params, headers=headers, timeout=15)
                 r.raise_for_status()
-                data = r.json()["chart"]["result"][0]
-                meta = data["meta"]
+                chart = r.json()["chart"]["result"][0]
+                meta = chart["meta"]
                 price = meta["regularMarketPrice"]
                 prev = meta["chartPreviousClose"]
                 change_pct = ((price - prev) / prev) * 100 if prev else 0
+                # Extract intraday prices for sparkline
+                closes = chart.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+                spark = [c for c in closes if c is not None]
                 results.append({
                     "symbol": sym,
+                    "name": meta.get("shortName", sym),
                     "price": price,
+                    "prev_close": prev,
                     "change_pct": round(change_pct, 2),
+                    "spark": spark,
                 })
             except Exception as e:
                 log.warning("Stock %s error: %s", sym, e)
-                results.append({"symbol": sym, "price": None, "change_pct": 0})
+                results.append({"symbol": sym, "name": sym, "price": None,
+                                "prev_close": None, "change_pct": 0, "spark": []})
         return results
 
     return _cached("stocks", ttl, _fetch)
