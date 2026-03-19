@@ -390,8 +390,13 @@ def display_image(img: Image.Image, simulate: bool = False):
         return
 
     try:
-        from inky.auto import auto
-        inky_display = auto()
+        try:
+            from inky.auto import auto
+            inky_display = auto()
+        except RuntimeError:
+            from inky import InkyPHAT
+            log.info("EEPROM not found, falling back to InkyPHAT")
+            inky_display = InkyPHAT("black")
         pal_img = _to_inky_palette(img)
         inky_display.set_image(pal_img)
         inky_display.show()

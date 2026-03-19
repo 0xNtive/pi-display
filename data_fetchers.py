@@ -37,26 +37,25 @@ def _cached(key, ttl_seconds, fetch_fn):
 def fetch_stocks(symbols: list[str], ttl: int = 120) -> list[dict] | None:
     def _fetch():
         results = []
-        url = "https://query1.finance.yahoo.com/v7/finance/quote"
-        params = {
-            "symbols": ",".join(symbols),
-            "fields": "regularMarketPrice,regularMarketChangePercent",
-        }
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, params=params, headers=headers, timeout=15)
-        r.raise_for_status()
-        quotes = r.json().get("quoteResponse", {}).get("result", [])
-        quote_map = {q["symbol"]: q for q in quotes}
         for sym in symbols:
-            q = quote_map.get(sym)
-            if q:
+            try:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+                params = {"range": "1d", "interval": "1d"}
+                r = requests.get(url, params=params, headers=headers, timeout=15)
+                r.raise_for_status()
+                data = r.json()["chart"]["result"][0]
+                meta = data["meta"]
+                price = meta["regularMarketPrice"]
+                prev = meta["chartPreviousClose"]
+                change_pct = ((price - prev) / prev) * 100 if prev else 0
                 results.append({
                     "symbol": sym,
-                    "price": q.get("regularMarketPrice"),
-                    "change_pct": round(q.get("regularMarketChangePercent", 0), 2),
+                    "price": price,
+                    "change_pct": round(change_pct, 2),
                 })
-            else:
-                log.warning("Stock %s: no data returned", sym)
+            except Exception as e:
+                log.warning("Stock %s error: %s", sym, e)
                 results.append({"symbol": sym, "price": None, "change_pct": 0})
         return results
 
