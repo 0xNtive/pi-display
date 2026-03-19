@@ -60,6 +60,7 @@ FONT_MD = _load_font(13)
 FONT_MD_B = _load_font(13, bold=True)
 FONT_LG = _load_font(20, bold=True)
 FONT_XL = _load_font(30, bold=True)
+FONT_HEADLINE = _load_font(16, bold=True)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -244,6 +245,9 @@ def render_weather(data: dict, city: str) -> Image.Image:
 
 _AQI_LABELS = {1: "Good", 2: "Fair", 3: "Moderate", 4: "Poor", 5: "Very Poor"}
 
+# US AQI approximate ranges mapped from EU 1-5 scale
+_AQI_US_RANGES = {1: "0-50", 2: "51-100", 3: "101-150", 4: "151-200", 5: "201-300"}
+
 
 def render_air_quality(data: dict, city: str) -> Image.Image:
     img = _new_image()
@@ -257,41 +261,33 @@ def render_air_quality(data: dict, city: str) -> Image.Image:
 
     aqi = data["aqi"]
     label = data["label"]
+    us_range = _AQI_US_RANGES.get(aqi, "?")
 
-    # ---- AQI value and label ----
-    aqi_str = str(aqi)
-    draw.text((6, 20), aqi_str, font=FONT_XL, fill=BLACK)
-    aqi_w = draw.textlength(aqi_str, font=FONT_XL)
-    draw.text((aqi_w + 12, 22), "/ 5", font=FONT_SM, fill=BLACK)
-    draw.text((aqi_w + 12, 36), label, font=FONT_MD_B, fill=BLACK)
+    # ---- Big label: "Good", "Moderate", etc. ----
+    draw.text((6, 20), label, font=FONT_XL, fill=BLACK)
 
-    # ---- AQI gauge bar (5 segments) ----
-    bar_y = 55
-    seg_w = 37  # (WIDTH - 10 - 4 gaps) / 5 ≈ 37
+    # ---- AQI index + US range ----
+    draw.text((6, 54), f"AQI Index: {aqi}/5  (US ~{us_range})", font=FONT_MD, fill=BLACK)
+
+    # ---- Gauge bar (5 segments) ----
+    bar_y = 74
+    seg_w = 42
     gap = 3
     for i in range(5):
         x0 = 6 + i * (seg_w + gap)
         x1 = x0 + seg_w
         if i < aqi:
-            draw.rectangle([x0, bar_y, x1, bar_y + 8], fill=BLACK)
+            draw.rectangle([x0, bar_y, x1, bar_y + 10], fill=BLACK)
         else:
-            draw.rectangle([x0, bar_y, x1, bar_y + 8], outline=BLACK, width=1)
-
-    # Scale labels under bar
-    draw.text((6, bar_y + 11), "Good", font=FONT_XS, fill=BLACK)
-    mid_label = "Moderate"
-    mid_w = draw.textlength(mid_label, font=FONT_XS)
-    draw.text(((WIDTH - mid_w) // 2, bar_y + 11), mid_label, font=FONT_XS, fill=BLACK)
-    vp_label = "V.Poor"
-    vp_w = draw.textlength(vp_label, font=FONT_XS)
-    draw.text((WIDTH - 6 - vp_w, bar_y + 11), vp_label, font=FONT_XS, fill=BLACK)
+            draw.rectangle([x0, bar_y, x1, bar_y + 10], outline=BLACK, width=1)
 
     # ---- Pollutant details ----
-    draw.line([(4, 80), (WIDTH - 4, 80)], fill=BLACK, width=1)
-    y = 84
+    draw.line([(4, 90), (WIDTH - 4, 90)], fill=BLACK, width=1)
+    y = 95
     draw.text((6, y), f"PM2.5: {data['pm2_5']}", font=FONT_SM, fill=BLACK)
-    draw.text((75, y), f"PM10: {data['pm10']}", font=FONT_SM, fill=BLACK)
-    draw.text((140, y), f"O\u2083: {data['o3']}", font=FONT_SM, fill=BLACK)
+    draw.text((90, y), f"PM10: {data['pm10']}", font=FONT_SM, fill=BLACK)
+    draw.text((170, y), f"O\u2083: {data['o3']}", font=FONT_SM, fill=BLACK)
+    draw.text((6, y + 14), f"NO\u2082: {data['no2']}", font=FONT_SM, fill=BLACK)
 
     return img
 
@@ -300,52 +296,52 @@ def render_air_quality(data: dict, city: str) -> Image.Image:
 # Screen: Headlines
 # ---------------------------------------------------------------------------
 
+_headline_index = 0
+
+
 def render_headlines(headlines: list[dict]) -> Image.Image:
+    global _headline_index
     img = _new_image()
     draw = ImageDraw.Draw(img)
-    _header_bar(draw, "Headlines")
 
     if not headlines:
+        _header_bar(draw, "Headlines")
         draw.text((10, 45), "No headlines available", font=FONT_MD, fill=BLACK)
         return img
 
-    y = 19
-    max_text_w = WIDTH - 10
-    shown = 0
+    # Pick one headline, cycle through them
+    _headline_index = _headline_index % len(headlines)
+    h = headlines[_headline_index]
+    _headline_index += 1
 
-    for h in headlines:
-        if shown >= 3 or y > HEIGHT - 18:
-            break
+    title = h.get("title", "").strip()
+    source = h.get("source", "")
 
-        title = h.get("title", "").strip()
-        source = h.get("source", "")
-        if not title:
-            continue
+    _header_bar(draw, f"News \u2014 {source[:16]}")
 
-        # Source badge: compact inverted label
-        src_text = source[:12]
-        src_w = draw.textlength(src_text, font=FONT_XS)
-        badge_w = src_w + 6
-        draw.rectangle([4, y, 4 + badge_w, y + 10], fill=BLACK)
-        draw.text((7, y + 1), src_text, fill=WHITE, font=FONT_XS)
+    # Wrap title with bigger font, use full screen area
+    max_text_w = WIDTH - 16
+    lines = _wrap_text(title, FONT_HEADLINE, max_text_w, draw)
 
-        # Headline text — 2 lines for first item, 1 line for rest
-        max_lines = 2 if shown == 0 else 1
-        lines = _wrap_text(title, FONT_SM, max_text_w, draw)
-        text_y = y + 11
-        for line_text in lines[:max_lines]:
-            if text_y > HEIGHT - 4:
-                break
-            # Add ellipsis if we're truncating
-            if line_text == lines[max_lines - 1] and len(lines) > max_lines:
-                while draw.textlength(line_text + "...", font=FONT_SM) > max_text_w and len(line_text) > 5:
-                    line_text = line_text[:-1]
-                line_text += "..."
-            draw.text((5, text_y), line_text, font=FONT_SM, fill=BLACK)
-            text_y += 12
+    # Center vertically in available space (below header)
+    line_h = 22
+    max_lines = 4
+    display_lines = lines[:max_lines]
+    total_h = len(display_lines) * line_h
+    start_y = 20 + (HEIGHT - 20 - total_h) // 2
 
-        y = text_y + 1
-        shown += 1
+    for i, line_text in enumerate(display_lines):
+        # Add ellipsis to last line if truncated
+        if i == max_lines - 1 and len(lines) > max_lines:
+            while draw.textlength(line_text + "...", font=FONT_HEADLINE) > max_text_w and len(line_text) > 5:
+                line_text = line_text[:-1]
+            line_text += "..."
+        draw.text((8, start_y + i * line_h), line_text, font=FONT_HEADLINE, fill=BLACK)
+
+    # Page indicator at bottom right
+    page_str = f"{_headline_index}/{len(headlines)}"
+    pw = draw.textlength(page_str, font=FONT_XS)
+    draw.text((WIDTH - pw - 6, HEIGHT - 12), page_str, font=FONT_XS, fill=BLACK)
 
     return img
 
