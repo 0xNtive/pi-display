@@ -1,16 +1,10 @@
 #!/bin/bash
-# Deploy pi-display to Raspberry Pi and set up auto-start on boot
+# Set up pi-display to auto-start on boot
 #
-# Usage (from your Mac):
-#   bash deploy.sh              # uses default pi@raspberrypi.local
-#   bash deploy.sh pi@10.0.0.5  # custom host
-#   bash deploy.sh pi@mypi.local ~/pi-display   # custom host + remote dir
+# Run directly on your Raspberry Pi:
+#   cd ~/pi-display && sudo bash deploy.sh
 
 set -e
-
-PI_HOST="${1:-pi@raspberrypi.local}"
-REMOTE_DIR="${2:-/home/pi/pi-display}"
-LOCAL_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 RED='\033[0;31m'
 GRN='\033[0;32m'
@@ -20,82 +14,51 @@ RST='\033[0m'
 
 ok()   { echo -e "  ${GRN}✓${RST} $1"; }
 info() { echo -e "  ${CYN}→${RST} $1"; }
-err()  { echo -e "  ${RED}✗${RST} $1"; }
+
+INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_USER="${SUDO_USER:-${USER:-pi}}"
 
 echo -e "${BLD}"
 echo "  ┌──────────────────────────────┐"
-echo "  │    Pi Display — Deploy       │"
+echo "  │  Pi Display — Auto-Start     │"
 echo "  └──────────────────────────────┘"
 echo -e "${RST}"
 
-info "Target: ${BLD}${PI_HOST}:${REMOTE_DIR}${RST}"
-echo ""
-
-# ── 1. Check SSH connectivity ────────────────────────────────────
-info "Checking SSH connection..."
-if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$PI_HOST" "echo ok" >/dev/null 2>&1; then
-    err "Cannot reach $PI_HOST — check hostname/IP and SSH keys"
-    echo "  Tip: ssh-copy-id $PI_HOST"
+if [ "$(id -u)" -ne 0 ]; then
+    echo -e "${RED}Error: Run with sudo →  sudo bash deploy.sh${RST}"
     exit 1
 fi
-ok "SSH connected"
 
-# ── 2. Sync project files ────────────────────────────────────────
-info "Syncing project files..."
-rsync -az --delete \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    --exclude 'venv/' \
-    --exclude '.git/' \
-    --exclude '.DS_Store' \
-    --exclude 'previews/' \
-    --exclude 'config.json' \
-    "$LOCAL_DIR/" "$PI_HOST:$REMOTE_DIR/"
-ok "Files synced"
-
-# ── 3. Remote setup (venv, service, start) ────────────────────────
-info "Setting up on Pi (this may take a minute on first run)..."
-ssh -t "$PI_HOST" bash -s "$REMOTE_DIR" <<'REMOTE_SCRIPT'
-set -e
-INSTALL_DIR="$1"
-cd "$INSTALL_DIR"
-
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-RST='\033[0m'
-ok()   { echo -e "  ${GRN}✓${RST} $1"; }
-info() { echo -e "  ${CYN}→${RST} $1"; }
-
-# ── Create venv if missing ──
-if [ ! -d "venv" ]; then
+# ── 1. Venv ──────────────────────────────────────────────────────
+if [ ! -d "$INSTALL_DIR/venv" ]; then
     info "Creating Python venv..."
-    python3 -m venv --system-site-packages venv
+    python3 -m venv --system-site-packages "$INSTALL_DIR/venv"
     ok "Venv created"
 else
     ok "Venv exists"
 fi
 
-# ── Install inky if missing ──
-if ! venv/bin/pip show inky >/dev/null 2>&1; then
+# ── 2. Install inky if missing ───────────────────────────────────
+if ! "$INSTALL_DIR/venv/bin/pip" show inky >/dev/null 2>&1; then
     info "Installing inky[rpi]..."
-    TMPDIR=/var/tmp/pip-build venv/bin/pip install --no-cache-dir "inky[rpi]>=1.5"
+    TMPDIR=/var/tmp/pip-build "$INSTALL_DIR/venv/bin/pip" install --no-cache-dir "inky[rpi]>=1.5"
     ok "inky installed"
 else
     ok "inky already installed"
 fi
 
-# ── Copy config template if no config.json ──
-if [ ! -f "config.json" ]; then
-    cp config.example.json config.json
+# ── 3. Config ────────────────────────────────────────────────────
+if [ ! -f "$INSTALL_DIR/config.json" ]; then
+    cp "$INSTALL_DIR/config.example.json" "$INSTALL_DIR/config.json"
+    chown "$REAL_USER:$REAL_USER" "$INSTALL_DIR/config.json"
     ok "Created config.json from template"
 else
     ok "config.json exists"
 fi
 
-# ── Install systemd service ──
+# ── 4. Systemd service ──────────────────────────────────────────
 info "Installing systemd service..."
-REAL_USER="$(whoami)"
-sudo tee /etc/systemd/system/pi-display.service >/dev/null <<EOF
+cat > /etc/systemd/system/pi-display.service <<EOF
 [Unit]
 Description=Pi Display - E-ink Info Screen
 After=network-online.target
@@ -114,13 +77,13 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable pi-display.service -q
+systemctl daemon-reload
+systemctl enable pi-display.service -q
 ok "Service enabled (auto-starts on boot)"
 
-# ── Start / restart the service ──
-info "Restarting pi-display..."
-sudo systemctl restart pi-display.service
+# ── 5. Start it now ─────────────────────────────────────────────
+info "Starting pi-display..."
+systemctl restart pi-display.service
 sleep 2
 
 if systemctl is-active --quiet pi-display.service; then
@@ -129,15 +92,14 @@ else
     echo "  Check logs: journalctl -u pi-display -f"
 fi
 
+# ── Done ─────────────────────────────────────────────────────────
+chown -R "$REAL_USER:$REAL_USER" "$INSTALL_DIR"
 IP_ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
 echo ""
-echo -e "  ${GRN}✓ Deploy complete!${RST}"
+echo -e "${BLD}${GRN}  ✓ Done!${RST} Pi display will auto-start on every boot."
+echo ""
 echo -e "  Web panel:  http://${IP_ADDR}:5000"
 echo -e "  Logs:       journalctl -u pi-display -f"
 echo -e "  Service:    sudo systemctl status pi-display"
-echo ""
-REMOTE_SCRIPT
-
-echo ""
-echo -e "${BLD}${GRN}  ✓ Done!${RST} Pi display is running and will auto-start on boot."
 echo ""
