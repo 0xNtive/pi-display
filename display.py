@@ -565,11 +565,11 @@ def render_error(message: str) -> Image.Image:
 def _to_inky_palette(img):
     """Convert grayscale image to Inky pHAT's 2-color palette format."""
     pal_img = Image.new("P", (WIDTH, HEIGHT))
-    # Inky palette: index 0 = black, index 1 = white
-    palette = [0, 0, 0, 255, 255, 255] + [0, 0, 0] * 254
+    # Inky palette: index 0 = white, index 1 = black
+    palette = [255, 255, 255, 0, 0, 0] + [0, 0, 0] * 254
     pal_img.putpalette(palette)
-    # Map grayscale to palette indices: dark → 0 (black), light → 1 (white)
-    pixels = [0 if p < 128 else 1 for p in img.getdata()]
+    # Map grayscale to palette indices: light → 0 (white), dark → 1 (black)
+    pixels = [1 if p < 128 else 0 for p in img.getdata()]
     pal_img.putdata(pixels)
     return pal_img
 
@@ -584,6 +584,7 @@ def display_image(img: Image.Image, simulate: bool = False):
     try:
         from inky.auto import auto
         inky_display = auto()
+        img = img.rotate(180)
         pal_img = _to_inky_palette(img)
         inky_display.set_image(pal_img)
         inky_display.show()
