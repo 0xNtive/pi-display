@@ -42,6 +42,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+User=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
 ExecStart=/bin/bash $INSTALL_DIR/autoupdate.sh
 EOF

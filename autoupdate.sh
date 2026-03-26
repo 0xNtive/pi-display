@@ -12,11 +12,11 @@ main() {
     git rev-parse --git-dir >/dev/null 2>&1 || exit 0
     git remote get-url origin >/dev/null 2>&1 || exit 0
 
-    # Allow root to operate on this repo (systemd runs as root)
-    git config --global --add safe.directory "$DIR" 2>/dev/null || true
-
     # Fetch latest commits
-    git fetch origin --quiet 2>/dev/null || exit 0
+    if ! git fetch origin --quiet 2>&1; then
+        logger -t pi-display-updater "git fetch failed"
+        exit 1
+    fi
 
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse origin/main 2>/dev/null) || exit 0
@@ -31,8 +31,8 @@ main() {
     # Restore config.json (not tracked, but be safe)
     [ -f .config.json.bak ] && mv .config.json.bak config.json
 
-    # Restart the display service
-    systemctl restart pi-display.service 2>/dev/null || true
+    # Restart the display service (use sudo since we run as non-root)
+    sudo systemctl restart pi-display.service 2>/dev/null || true
 
     logger -t pi-display-updater "Updated from ${LOCAL:0:7} to ${REMOTE:0:7}, service restarted"
 }
